@@ -1,10 +1,22 @@
-dir.create("data/raw", recursive = T, showWarnings = F)
+dir.create("data/raw", recursive = TRUE, showWarnings = FALSE)
 
-qcew_data <- function(YEAR, QUARTER){
+options(timeout = 1200)
+
+qcew_data <- function(YEAR) {
   
-  url <- https://data.bls.gov/cew/data/files/YEAR/csv/YEAR_qtrQUARTER_singlefile.zip
+  url <- glue::glue("https://data.bls.gov/cew/data/files/{YEAR}/csv/{YEAR}_qtrly_singlefile.zip")
   
-  download.file(download_qcewYEARQUARTER, destfile = "url", mode = "wb")
+  destination <- glue::glue("data/raw/download_qcew_{YEAR}_singlefile.zip")
   
-  print("Downloaded " download_qcewYEARQUARTER)
+  download.file(url, destfile = destination, mode = "wb")
+  
+  message("Downloaded ", destination)
+  
+  if (file.exists(destination)) {
+    file.remove(destination)
+  }
 }
+
+
+qcew_data(2023)
+
