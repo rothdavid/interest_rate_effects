@@ -18,4 +18,3 @@ qcew_processed_data <- function(YEAR) {
   write_csv(qcew_county_total_YEAR, name)
 }
 
-qcew_processed_data(2023)

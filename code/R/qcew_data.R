@@ -8,15 +8,16 @@ qcew_data <- function(YEAR) {
   
   destination <- glue::glue("data/raw/download_qcew_{YEAR}_singlefile.zip")
   
+  if (file.exists(destination)) {
+    file.remove(destination)
+  }
+  
   download.file(url, destfile = destination, mode = "wb")
   
   message("Downloaded ", destination)
   
-  if (file.exists(destination)) {
-    file.remove(destination)
-  }
+
 }
 
 
-qcew_data(2023)
 
