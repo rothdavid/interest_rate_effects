@@ -6,6 +6,7 @@
 ## creates a list for all the df's to be stored in
 
 library("tidyverse")
+library("readxl")
 
 qcew_list <- list()
 
@@ -50,6 +51,14 @@ qcew_panel |>
 
 area_fips <- read_csv("data/raw/area_fips.csv")                           
 
+county_area_fips <- area_fips |> 
+  select(state_name, county_name, county_fipcode) |> 
+  mutate(county_name = str_to_title(county_name),
+         state_name = str_to_title(state_name)) |> 
+  group_by(state_name, county_name) |> 
+  distinct()
+  
+
 area_fips <- area_fips |> 
   mutate(fip = str_sub(county_fipcode, 1, 2)) |> 
   select(state_name, fip) |> 
@@ -90,7 +99,7 @@ qcew_panel1 |>
 
 qcew_panel1 <- qcew_panel1 |> 
   mutate(date = yq(glue::glue("{year}:{qtr}")),
-         log_emplvl = case_when(avg_emplvl != 0 ~ log(avg_emplvl),
+         log_emplvl = case_when(avg_emplvl > 0 ~ log(avg_emplvl),
                                 TRUE ~ NA),
          log_wkly_wage = case_when(avg_wkly_wage != 0 ~ log(avg_wkly_wage),
                                    TRUE ~ NA)) |> 
@@ -99,7 +108,8 @@ qcew_panel1 <- qcew_panel1 |>
   mutate(wage_growth_yr = log_wkly_wage - lag(log_wkly_wage, 4),
          wage_growth_qtr = log_wkly_wage - lag(log_wkly_wage, 1),
          emplvl_growth_yr = log_emplvl - lag(log_emplvl, 4),
-         emplvl_growth_qtr = log_emplvl - lag(log_emplvl, 1))
+         emplvl_growth_qtr = log_emplvl - lag(log_emplvl, 1)) |> 
+  ungroup()
 
 qcew_panel1 |> 
   ggplot(mapping = aes(date, wage_growth_yr)) + 
@@ -138,3 +148,25 @@ qcew_panel_data |>
             d = min(emplvl_growth_yr))
 
 write_csv(qcew_panel_data, "data/processed/qcew_panel_data.csv")
+
+fed_districts <- read_excel("data/raw/FED_FIPS_Counties.xlsx")
+
+fed_district1 <- fed_districts |> 
+  left_join(county_area_fips, join_by('County Name' == county_name,
+                                      'State' == state_name)) |> 
+  select(county_fipcode, 'FED District')
+
+qcew_panel_district_data <- qcew_panel_data|>
+  left_join(fed_district1, join_by(area_fips == county_fipcode)) |> 
+  rename(fed_district = 'FED District') |> 
+  mutate(fed_district = case_when(area_fips == 21155 ~ "St. Louis",
+                                  area_fips == 21157 ~ "St. Louis",
+                                  TRUE ~ fed_district),
+         fed_district = as.factor(fed_district)) |> 
+  ungroup()
+
+missing <- qcew_panel_district_data |> 
+  filter(is.na(fed_district)) |> 
+  group_by(area_fips, state_name) |> 
+  distinct(area_fips)
+# need to fix later   
