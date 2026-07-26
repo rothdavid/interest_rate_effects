@@ -176,5 +176,13 @@ missing <- qcew_panel_district_data |>
 
 fed_funds <- read.csv("data/processed/fed_funds.csv")
 
+fed_funds <- fed_funds |> 
+  mutate(observation_date = as.Date(observation_date))
+  
 qcew_panel_district_data <- qcew_panel_district_data |> 
-  left_join(fed_funds, join_by(date == observation_date))
+  left_join(fed_funds, join_by(date == observation_date)) |> 
+  rename(fed_funds_rate = FEDFUNDS) |> 
+  group_by(area_fips) |> 
+  mutate(fed_funds_chg_qtr = fed_funds_rate - lag(fed_funds_rate, 1),
+         fed_funds_chg_yr = fed_funds_rate - lag(fed_funds_rate, 4)) |> 
+  ungroup()

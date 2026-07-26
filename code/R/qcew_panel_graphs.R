@@ -39,24 +39,24 @@ qcew_panel_district_data |>
   ggplot(mapping = aes(x = date, y = avg_wage, color = fed_district, group = fed_district)) +
   geom_point() +
   geom_line()
+
 qcew_panel_district_data |> 
   group_by(date, fed_district) |> 
   summarise(avg_wage = mean(wage_growth_yr, na.rm = TRUE)) |> 
-  ggplot(mapping = aes(x = date, y = avg_wage), color = fed_district) +
+  ggplot(mapping = aes(x = date, y = avg_wage, color = fed_district, group = fed_district)) +
   geom_point() +
-  facet_grid(~fed_district) +
   geom_line()
 
 qcew_panel_district_data |> 
   group_by(date, fed_district) |> 
   summarise(empl = mean(emplvl_growth_qtr, na.rm = TRUE)) |> 
-  ggplot(mapping = aes(x = date, y = empl)) +
+  ggplot(mapping = aes(x = date, y = empl, , color = fed_district, group = fed_district)) +
   geom_point() +
   geom_line()
 
 qcew_panel_district_data |> 
   group_by(date, fed_district) |> 
   summarise(empl = mean(emplvl_growth_yr, na.rm = TRUE)) |> 
-  ggplot(mapping = aes(x = date, y = empl)) +
+  ggplot(mapping = aes(x = date, y = empl, , color = fed_district, group = fed_district)) +
   geom_point() +
   geom_line()

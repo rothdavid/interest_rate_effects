@@ -7,7 +7,6 @@ fed_funds <- read.csv("data/raw/fed_funds.csv")
 # filter for date to be between 2018 and 2023
 
 fed_funds <- fed_funds |> 
-  mutate(observation_date = date(observation_date)) |> 
   filter(year(observation_date) >= 2018, year(observation_date) <= 2023) 
 
 write_csv(fed_funds, "data/processed/fed_funds.csv")
