@@ -170,3 +170,11 @@ missing <- qcew_panel_district_data |>
   group_by(area_fips, state_name) |> 
   distinct(area_fips)
 # need to fix later   
+
+
+# adding in Fed Funds data
+
+fed_funds <- read.csv("data/processed/fed_funds.csv")
+
+qcew_panel_district_data <- qcew_panel_district_data |> 
+  left_join(fed_funds, join_by(date == observation_date))
