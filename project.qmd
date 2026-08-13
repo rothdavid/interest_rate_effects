@@ -8,6 +8,7 @@ editor: visual
 library(tidyverse)
 library(readxl)
 library(lubridate)
+library(knitr)
 ```
 
 ```{r}
@@ -248,20 +249,10 @@ qcew_panel_district_data <- qcew_panel_data|>
   rename(fed_district = 'FED District') |> 
   mutate(fed_district = case_when(area_fips == "21155" ~ "St. Louis",
                                   area_fips == "21157" ~ "St. Louis",
-                                  area_fips == "19003" ~ "Chicago",
-                                  area_fips == "19051" ~ "Chicago",
-                                  area_fips == "53023" ~ "San Francisco",
-                                  area_fips == "32011" ~ "San Francisco",
+                                  fed_district == "San Fransico" ~ "San Francisco", 
                                   TRUE ~ fed_district),
          fed_district = as.factor(fed_district)) |> 
   ungroup()
-
-missing <- qcew_panel_district_data |> 
-  filter(is.na(fed_district)) |> 
-  group_by(area_fips, state_name) |> 
-  distinct(area_fips)
-# need to fix later   
-
 
 # adding in Fed Funds data
 
@@ -301,6 +292,11 @@ qcew_panel_district_data |>
 qcew_panel_district_data |> 
   filter(avg_emplvl == 0, avg_wkly_wage == 0, total_qtrly_wages == 0)
 
+qcew_panel_district_data |> 
+  filter(is.na(fed_district)) |> 
+  select(area_fips, state_name) |> 
+  distinct(area_fips, state_name) |> 
+  kable()
 ```
 ## Preliminary Graphs
 
