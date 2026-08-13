@@ -1,0 +1,371 @@
+---
+title: "summer_project"
+format: html
+editor: visual
+---
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(lubridate)
+```
+
+```{r}
+# This scipt takes raw QCEW data for each year and filters the data to a county level
+
+qcew_processed_data <- function(YEAR) {
+  file <- glue::glue("data/raw/download_qcew_{YEAR}_singlefile.zip")
+  qcew_raw <- read_csv(file)
+  qcew_county_total_YEAR <- qcew_raw |> 
+# filtering for county
+     filter(industry_code == "10", agglvl_code == 70, 
+           size_code == 0, own_code == 0) |> 
+# creates average employment for each quarter
+    mutate(avg_emplvl = (month1_emplvl + month2_emplvl
+                         + month3_emplvl) / 3) |> 
+    select(area_fips, year, qtr, qtrly_estabs, total_qtrly_wages, 
+           avg_wkly_wage, avg_emplvl)
+# saving the processed data 
+  name <- glue::glue("data/processed/qcew_county_total_{YEAR}.csv")
+  write_csv(qcew_county_total_YEAR, name)
+}
+```
+
+```{r}
+dir.create("data/raw", recursive = TRUE, showWarnings = FALSE)
+dir.create("data/processed", recursive = TRUE, showWarnings = FALSE)
+dir.create("output/figures", recursive = TRUE, showWarnings = FALSE)
+dir.create("output/tables", recursive = TRUE, showWarnings = FALSE)
+
+options(timeout = 1200)
+
+qcew_data <- function(YEAR) {
+  
+  url <- glue::glue("https://data.bls.gov/cew/data/files/{YEAR}/csv/{YEAR}_qtrly_singlefile.zip")
+  
+  destination <- glue::glue("data/raw/download_qcew_{YEAR}_singlefile.zip")
+  
+  if (file.exists(destination)) {
+    file.remove(destination)
+  }
+  
+  download.file(url, destfile = destination, mode = "wb")
+  
+  message("Downloaded ", destination)
+  
+}
+```
+
+```{r}
+
+# test qcew data processing
+
+qcew_check <- function(YEAR){
+  file <- glue::glue("data/processed/qcew_county_total_{YEAR}.csv")
+  data <- read.csv(file)
+  # counts number of rows
+  nrow(data)
+  data |> 
+    group_by(qtr) |> 
+    summarize(n_rows = n())
+  data |> 
+    # checking for one row per quarter for each county 
+    group_by(qtr, area_fips) |> 
+    count() |> 
+    filter(n >1)
+}
+```
+
+```{r}
+# downloads Fed Funds Data
+
+download.file("https://fred.stlouisfed.org/graph/fredgraph.csv?bgcolor=%23ebf3fb&chart_type=line&drp=0&fo=open%20sans&graph_bgcolor=%23ffffff&height=450&mode=fred&recession_bars=on&txtcolor=%23444444&ts=12&tts=12&width=1320&nt=0&thu=0&trc=0&show_legend=yes&show_axis_titles=yes&show_tooltip=yes&id=FEDFUNDS&scale=left&cosd=1954-07-01&coed=2026-06-01&line_color=%230073e6&link_values=false&line_style=solid&mark_type=none&mw=3&lw=3&ost=-99999&oet=99999&mma=0&fml=a&fq=Monthly&fam=avg&fgst=lin&fgsnd=2020-02-01&line_index=1&transformation=lin&vintage_date=2026-07-26&revision_date=2026-07-26&nd=1954-07-01", "data/raw/fed_funds.csv", mode = "wb")
+
+fed_funds <- read.csv("data/raw/fed_funds.csv")
+
+# filter for date to be between 2018 and 2023
+
+fed_funds <- fed_funds |> 
+  filter(year(observation_date) >= 2018, year(observation_date) <= 2023) 
+
+write_csv(fed_funds, "data/processed/fed_funds.csv")
+```
+
+```{r}
+# This script downloads the State, County, and City Data
+
+fips_data <- glue::glue("https://data.transportation.gov/resource/eek5-pv8d.csv?$limit=50000") 
+
+destination <- glue::glue("data/raw/area_fips.csv")
+
+download.file(fips_data, destination, mode = "wb")
+```
+
+```{r}
+
+# creating panel dataset
+
+# load data
+
+## creates a list for all the df's to be stored in
+
+qcew_list <- list()
+
+for (x in 2018:2023) {
+  data <- glue::glue("data/processed/qcew_county_total_{x}.csv")
+  qcew_list[[as.character(x)]] <- read_csv(data)
+  
+}
+
+qcew_panel <- bind_rows(qcew_list)
+
+```
+
+```{r}
+# count number of rows
+ # we are expecting 3274 counties * 4 quarters * 6 years = 78576
+a <- qcew_panel |> 
+  group_by(year) |> 
+  nrow()
+ 
+78576 - a
+
+# counts number of rows for each year and quarter
+
+qcew_panel |> 
+  group_by(year, qtr) |> 
+  summarise(nrows = n())
+
+# 2018 and 2019 have one less row per quarter
+
+qcew_panel |> 
+  group_by(area_fips) |> 
+  summarise(nrows = n()) |> 
+  filter(nrows < 24)  # 24 = 6 years * 4 qtrs per year
+    # output: 02063, 02066, 02261 --- areas in Alaska
+
+# checking for duplicates
+
+qcew_panel |> 
+  group_by(year, qtr, area_fips) |> 
+  summarise(nrows = n()) |> 
+  filter(nrows > 1) 
+
+```
+
+```{r}
+# load in State Data
+
+area_fips <- read_csv("data/raw/area_fips.csv")                           
+
+county_area_fips <- area_fips |> 
+  select(state_name, county_name, county_fipcode) |> 
+  mutate(county_name = str_to_title(county_name),
+         state_name = str_to_title(state_name)) |> 
+  group_by(state_name, county_name) |> 
+  distinct()
+  
+
+area_fips <- area_fips |> 
+  mutate(fip = str_sub(county_fipcode, 1, 2)) |> 
+  select(state_name, fip) |> 
+  distinct()
+
+# join state data
+                                                 
+qcew_panel1 <- qcew_panel |> 
+  mutate(state_fips = str_sub(area_fips, 1, 2)) |> 
+  left_join(area_fips, join_by(state_fips == fip)) |> 
+  mutate(state_name = case_when(state_fips == "72" ~ "Puerto Rico",
+                                state_fips == "78" ~ "U.S. Virgin Islands",
+                                TRUE ~ state_name)
+         ) |> 
+  select(-state_fips)
+
+# Created data time object and log vars
+
+qcew_panel1 <- qcew_panel1 |> 
+  mutate(date = yq(glue::glue("{year}:{qtr}")),
+         log_emplvl = case_when(avg_emplvl > 0 ~ log(avg_emplvl),
+                                TRUE ~ NA),
+         log_wkly_wage = case_when(avg_wkly_wage > 0 ~ log(avg_wkly_wage),
+                                   TRUE ~ NA)) |> 
+  arrange(area_fips, date) |>  
+  group_by(area_fips) |> 
+  mutate(wage_growth_yr = log_wkly_wage - lag(log_wkly_wage, 4),
+         wage_growth_qtr = log_wkly_wage - lag(log_wkly_wage, 1),
+         emplvl_growth_yr = log_emplvl - lag(log_emplvl, 4),
+         emplvl_growth_qtr = log_emplvl - lag(log_emplvl, 1)) |> 
+  ungroup()
+
+qcew_panel1 |> 
+  ggplot(mapping = aes(date, wage_growth_yr)) + 
+  geom_point() +
+  geom_line() +
+  facet_wrap(~state_name)
+
+qcew_panel1 |> 
+  ggplot(mapping = aes(date, emplvl_growth_yr)) +
+  geom_point() +
+  geom_line() +
+  facet_wrap(~state_name)
+
+qcew_panel1 |>
+  ungroup() |> 
+  drop_na() |> 
+  summarise(a = max(wage_growth_yr),
+            b = max(emplvl_growth_yr),
+            c = min(wage_growth_yr),
+            d = min(emplvl_growth_yr))
+
+qcew_panel1 |> 
+  filter(emplvl_growth_yr >= 2)
+
+# removing counties that are undefined 
+
+qcew_panel_data <- qcew_panel1 |> 
+  filter(str_sub(area_fips, 3, 5) != "999")
+
+qcew_panel_data |> 
+  ungroup() |> 
+  drop_na() |> 
+  summarise(a = max(wage_growth_yr),
+            b = max(emplvl_growth_yr),
+            c = min(wage_growth_yr),
+            d = min(emplvl_growth_yr))
+
+write_csv(qcew_panel_data, "data/processed/qcew_panel_data.csv")
+
+fed_districts <- read_excel("data/raw/FED_FIPS_Counties.xlsx")
+
+fed_district1 <- fed_districts |> 
+  left_join(county_area_fips, join_by('County Name' == county_name,
+                                      'State' == state_name)) |> 
+  select(county_fipcode, 'FED District')
+
+qcew_panel_district_data <- qcew_panel_data|>
+  left_join(fed_district1, join_by(area_fips == county_fipcode)) |> 
+  rename(fed_district = 'FED District') |> 
+  mutate(fed_district = case_when(area_fips == "21155" ~ "St. Louis",
+                                  area_fips == "21157" ~ "St. Louis",
+                                  area_fips == "19003" ~ "Chicago",
+                                  area_fips == "19051" ~ "Chicago",
+                                  area_fips == "53023" ~ "San Francisco",
+                                  area_fips == "32011" ~ "San Francisco",
+                                  TRUE ~ fed_district),
+         fed_district = as.factor(fed_district)) |> 
+  ungroup()
+
+missing <- qcew_panel_district_data |> 
+  filter(is.na(fed_district)) |> 
+  group_by(area_fips, state_name) |> 
+  distinct(area_fips)
+# need to fix later   
+
+
+# adding in Fed Funds data
+
+fed_funds <- read.csv("data/processed/fed_funds.csv")
+
+fed_funds <- fed_funds |> 
+  mutate(observation_date = as.Date(observation_date))
+  
+qcew_panel_district_data <- qcew_panel_district_data |> 
+  left_join(fed_funds, join_by(date == observation_date)) |> 
+  rename(fed_funds_rate = FEDFUNDS) |> 
+  group_by(area_fips) |> 
+  mutate(fed_funds_chg_qtr = fed_funds_rate - lag(fed_funds_rate, 1),
+         fed_funds_chg_yr = fed_funds_rate - lag(fed_funds_rate, 4)) |> 
+  ungroup()
+
+```
+```{r}
+# Zero and NA Investigation
+
+qcew_panel_district_data |> 
+  filter(is.na(state_name)) |> 
+  distinct(area_fips) 
+
+qcew_panel_district_data |> 
+  summarise(zero_emplvl = sum(avg_emplvl == 0),
+            na_emplvl = sum(is.na(avg_emplvl)),
+            zero_estabs = sum(qtrly_estabs == 0),
+            na_estabs = sum(is.na(qtrly_estabs)),
+            zero_tot_wage = sum(total_qtrly_wages == 0),
+            na_tot_wage = sum(is.na(total_qtrly_wages)),
+            zero_week_wage = sum(avg_wkly_wage == 0),
+            na_week_wage = sum(is.na(avg_wkly_wage)))
+
+# Found 15 observations with 0's. 
+
+qcew_panel_district_data |> 
+  filter(avg_emplvl == 0, avg_wkly_wage == 0, total_qtrly_wages == 0)
+
+```
+## Preliminary Graphs
+
+```{r}
+# overall changes
+
+qcew_panel_data |> 
+  group_by(date) |> 
+  summarise(avg_wage = mean(wage_growth_qtr, na.rm = TRUE)) |> 
+  ggplot(mapping = aes(x = date, y = avg_wage)) +
+  geom_point() +
+  geom_line()
+
+qcew_panel_data |> 
+  group_by(date) |> 
+  summarise(avg_wage = mean(wage_growth_yr, na.rm = TRUE)) |> 
+  ggplot(mapping = aes(x = date, y = avg_wage)) +
+  geom_point() +
+  geom_line()
+
+qcew_panel_data |> 
+  group_by(date) |> 
+  summarise(empl = mean(emplvl_growth_qtr, na.rm = TRUE)) |> 
+  ggplot(mapping = aes(x = date, y = empl)) +
+  geom_point() +
+  geom_line()
+
+qcew_panel_data |> 
+  group_by(date) |> 
+  summarise(empl = mean(emplvl_growth_yr, na.rm = TRUE)) |> 
+  ggplot(mapping = aes(x = date, y = empl)) +
+  geom_point() +
+  geom_line()
+
+# graphs by districts
+
+qcew_panel_district_data |> 
+  count(fed_district)
+
+qcew_panel_district_data |> 
+  group_by(date, fed_district) |> 
+  summarise(avg_wage = mean(wage_growth_qtr, na.rm = TRUE)) |> 
+  ggplot(mapping = aes(x = date, y = avg_wage, color = fed_district, group = fed_district)) +
+  geom_point() +
+  geom_line()
+
+qcew_panel_district_data |> 
+  group_by(date, fed_district) |> 
+  summarise(avg_wage = mean(wage_growth_yr, na.rm = TRUE)) |> 
+  ggplot(mapping = aes(x = date, y = avg_wage, color = fed_district, group = fed_district)) +
+  geom_point() +
+  geom_line()
+
+qcew_panel_district_data |> 
+  group_by(date, fed_district) |> 
+  summarise(empl = mean(emplvl_growth_qtr, na.rm = TRUE)) |> 
+  ggplot(mapping = aes(x = date, y = empl, , color = fed_district, group = fed_district)) +
+  geom_point() +
+  geom_line()
+
+qcew_panel_district_data |> 
+  group_by(date, fed_district) |> 
+  summarise(empl = mean(emplvl_growth_yr, na.rm = TRUE)) |> 
+  ggplot(mapping = aes(x = date, y = empl, , color = fed_district, group = fed_district)) +
+  geom_point() +
+  geom_line()
+
+```
