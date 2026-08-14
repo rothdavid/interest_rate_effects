@@ -290,17 +290,32 @@ qcew_panel_district_data <- qcew_panel_data|>
 fed_funds <- read.csv("data/processed/fed_funds.csv")
 
 fed_funds <- fed_funds |> 
-  mutate(observation_date = as.Date(observation_date))
+  mutate(observation_date = as.Date(observation_date),
+         year = year(observation_date),
+         month = month(observation_date),
+         quarter = case_when(month %in% c(1,2,3) ~ 1,
+                              month %in% c(4,5,6) ~ 2,
+                              month %in% c(7,8,9) ~ 3, 
+                              month %in% c(10,11,12) ~ 4)
+         ) |> 
+  group_by(year, quarter) |> 
+  summarise(fed_funds_rate = sum(FEDFUNDS)) |> 
+  ungroup() |> 
+  mutate(fed_funds_lag1 = lag(fed_funds_rate, 1),
+         fed_funds_lag2 = lag(fed_funds_rate, 2),
+         fed_funds_lag3 = lag(fed_funds_rate, 3),
+         fed_funds_lag4 = lag(fed_funds_rate, 4),
+         fed_funds_chg_qtr1 = fed_funds_rate - lag(fed_funds_rate, 1),
+         fed_funds_chg_qtr2 = fed_funds_rate - lag(fed_funds_rate, 2),
+         fed_funds_chg_qtr3 = fed_funds_rate - lag(fed_funds_rate, 3),
+         fed_funds_chg_yr = fed_funds_rate - lag(fed_funds_rate, 4)
+         ) 
+        
   
 qcew_panel_district_data <- qcew_panel_district_data |> 
-  left_join(fed_funds, join_by(date == observation_date)) |> 
-  rename(fed_funds_rate = FEDFUNDS) |> 
-  group_by(area_fips) |> 
-  mutate(fed_funds_chg_qtr = fed_funds_rate - lag(fed_funds_rate, 1),
-         fed_funds_chg_yr = fed_funds_rate - lag(fed_funds_rate, 4)) |> 
-  ungroup()
-
+  left_join(fed_funds, join_by(year == year, qtr == quarter))
 ```
+
 ```{r}
 # Zero and NA Investigation
 
@@ -318,7 +333,7 @@ qcew_panel_district_data |>
             zero_week_wage = sum(avg_wkly_wage == 0),
             na_week_wage = sum(is.na(avg_wkly_wage)))
 
-# Found 15 observations with 0's. 
+# Found 7 observations with 0's. 
 
 qcew_panel_district_data |> 
   filter(avg_emplvl == 0, avg_wkly_wage == 0, total_qtrly_wages == 0)
@@ -328,6 +343,31 @@ qcew_panel_district_data |>
   select(area_fips, state_name) |> 
   distinct(area_fips, state_name) |> 
   kable()
+
+qcew_panel_district_data |> 
+  group_by(area_fips, state_name) |> 
+  count() |> 
+  filter(n > 24 | n < 24) # 4 quarters * 6 years = 24
+
+qcew_panel_district_data |> 
+  group_by(area_fips) |>
+  select(area_fips, fed_district) |> 
+  distinct() |> 
+  count() |> 
+  filter(n >1)
+
+data_summary <- qcew_panel_district_data |> 
+  summarise(observations = n(),
+            counties = n_distinct(area_fips),
+            quarters = n_distinct(date),
+            missing_fed_district = sum(is.na(fed_district)),
+            missing_state = sum(is.na(state_name)),
+            zero_empl = sum(avg_emplvl == 0),
+            zero_wage = sum(avg_wkly_wage == 0)
+            )
+
+data_summary
+  
 ```
 ## Preliminary Graphs
 
