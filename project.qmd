@@ -293,27 +293,30 @@ fed_funds <- fed_funds |>
   mutate(observation_date = as.Date(observation_date),
          year = year(observation_date),
          month = month(observation_date),
-         quarter = case_when(month %in% c(1,2,3) ~ 1,
-                              month %in% c(4,5,6) ~ 2,
-                              month %in% c(7,8,9) ~ 3, 
-                              month %in% c(10,11,12) ~ 4)
-         ) |> 
+         quarter = quarter(month)) |> 
   group_by(year, quarter) |> 
-  summarise(fed_funds_rate = sum(FEDFUNDS)) |> 
+  summarise(fed_funds_rate = mean(FEDFUNDS, na.rm = TRUE)) |> 
   ungroup() |> 
-  mutate(fed_funds_lag1 = lag(fed_funds_rate, 1),
+  mutate(# level lags
+         fed_funds_lag1 = lag(fed_funds_rate, 1),
          fed_funds_lag2 = lag(fed_funds_rate, 2),
          fed_funds_lag3 = lag(fed_funds_rate, 3),
          fed_funds_lag4 = lag(fed_funds_rate, 4),
-         fed_funds_chg_qtr1 = fed_funds_rate - lag(fed_funds_rate, 1),
-         fed_funds_chg_qtr2 = fed_funds_rate - lag(fed_funds_rate, 2),
-         fed_funds_chg_qtr3 = fed_funds_rate - lag(fed_funds_rate, 3),
-         fed_funds_chg_yr = fed_funds_rate - lag(fed_funds_rate, 4)
+         # changes
+         fed_funds_chg_qtr = fed_funds_rate - lag(fed_funds_rate, 1),
+         fed_funds_chg_yr = fed_funds_rate - lag(fed_funds_rate, 4),
+         # lags of quarter policy changes
+         fed_funds_chg_lag1 = fed_funds_chg_qtr - lag(fed_funds_chg_qtr, 1),
+         fed_funds_chg_lag2 = fed_funds_chg_qtr - lag(fed_funds_chg_qtr, 2),
+         fed_funds_chg_lag3 = fed_funds_chg_qtr - lag(fed_funds_chg_qtr, 3),
+         fed_funds_chg_lag4 = fed_funds_chg_qtr - lag(fed_funds_chg_qtr, 4)
          ) 
         
   
 qcew_panel_district_data <- qcew_panel_district_data |> 
   left_join(fed_funds, join_by(year == year, qtr == quarter))
+
+write_csv(qcew_panel_district_data, "data/processed/analysis_panel.csv")
 ```
 
 ```{r}
@@ -331,7 +334,8 @@ qcew_panel_district_data |>
             zero_tot_wage = sum(total_qtrly_wages == 0),
             na_tot_wage = sum(is.na(total_qtrly_wages)),
             zero_week_wage = sum(avg_wkly_wage == 0),
-            na_week_wage = sum(is.na(avg_wkly_wage)))
+            na_week_wage = sum(is.na(avg_wkly_wage))
+            )
 
 # Found 7 observations with 0's. 
 
@@ -367,6 +371,13 @@ data_summary <- qcew_panel_district_data |>
             )
 
 data_summary
+
+fed_funds_summary <- fed_funds |> 
+  group_by(year, quarter) |> 
+  summarise(total = n_distinct(fed_funds_rate)) |> 
+  filter(total > 1)
+
+fed_funds_summary
   
 ```
 ## Preliminary Graphs
