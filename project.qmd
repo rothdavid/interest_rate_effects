@@ -9,6 +9,7 @@ library(tidyverse)
 library(readxl)
 library(lubridate)
 library(knitr)
+library(plm)
 ```
 
 ```{r}
@@ -75,6 +76,16 @@ qcew_check <- function(YEAR){
     count() |> 
     filter(n >1)
 }
+```
+
+```{r}
+# downloads BLS QCEW Data
+#for(x in 2010:2023){
+#  qcew_data(x)
+#  qcew_processed_data(x)
+#  qcew_check(x)
+#}
+
 ```
 
 ```{r}
@@ -306,10 +317,10 @@ fed_funds <- fed_funds |>
          fed_funds_chg_qtr = fed_funds_rate - lag(fed_funds_rate, 1),
          fed_funds_chg_yr = fed_funds_rate - lag(fed_funds_rate, 4),
          # lags of quarter policy changes
-         fed_funds_chg_lag1 = fed_funds_chg_qtr - lag(fed_funds_chg_qtr, 1),
-         fed_funds_chg_lag2 = fed_funds_chg_qtr - lag(fed_funds_chg_qtr, 2),
-         fed_funds_chg_lag3 = fed_funds_chg_qtr - lag(fed_funds_chg_qtr, 3),
-         fed_funds_chg_lag4 = fed_funds_chg_qtr - lag(fed_funds_chg_qtr, 4)
+         fed_funds_chg_lag1 = lag(fed_funds_chg_qtr, 1),
+         fed_funds_chg_lag2 = lag(fed_funds_chg_qtr, 2),
+         fed_funds_chg_lag3 = lag(fed_funds_chg_qtr, 3),
+         fed_funds_chg_lag4 = lag(fed_funds_chg_qtr, 4)
          ) 
         
   
@@ -375,7 +386,7 @@ data_summary
 fed_funds_summary <- fed_funds |> 
   group_by(year, quarter) |> 
   summarise(total = n_distinct(fed_funds_rate)) |> 
-  filter(total > 1)
+  filter(total != 1)
 
 fed_funds_summary
   
@@ -446,4 +457,105 @@ qcew_panel_district_data |>
   geom_point() +
   geom_line()
 
+```
+
+### Figures
+
+```{r}
+fed_funds_graph <- qcew_panel_district_data |> 
+  group_by(date) |> 
+  select(date, fed_funds_rate) |> 
+  distinct() |> 
+  ggplot(mapping = aes(x = date, y = fed_funds_rate)) +
+  geom_line() +
+  labs(title = "Fed Funds Rate over Time", x = "Time", y = "Fed Funds Rate")
+
+emplvl_growth <- qcew_panel_district_data |> 
+  group_by(date) |> 
+  summarise(employment = sum(avg_emplvl)) |> 
+  mutate(log_employment = log(employment),
+         employment_growth = log_employment - lag(log_employment, 1)) |> 
+  ggplot(mapping = aes(x = date, y = employment_growth)) +
+  geom_line() +
+  labs(title = "National Change in Employment", x = "Time", y = "Change in Employment")
+
+emplvl_growth_fed_district <- qcew_panel_district_data |> 
+  group_by(fed_district, date) |> 
+  summarise(employment = sum(avg_emplvl)) |> 
+  mutate(log_employment = log(employment),
+         employment_growth = log_employment - lag(log_employment, 1)) |> 
+  ggplot(mapping = aes(x = date, y = employment_growth)) +
+  geom_line() +
+  facet_wrap(~fed_district) +
+  labs(title = "Change in Employment per Fed District", x = "Time", y = "Change in Employment")
+
+
+wage_growth_fed_district <- qcew_panel_district_data |> 
+  group_by(fed_district, date) |> 
+  summarise(wage = weighted.mean(avg_wkly_wage, w = avg_emplvl)) |> 
+  mutate(log_wage = log(wage),
+         wage_growth = log_wage - lag(log_wage, 1)) |> 
+  ggplot(mapping = aes(x = date, y = wage_growth)) +
+  geom_line() +
+  facet_wrap(~fed_district) +
+  labs(title = "Average Wage Growth per Fed District", x = "Time", y = "Average Wage Growth")
+
+district_summary <- qcew_panel_district_data |> 
+  group_by(fed_district) |> 
+  summarise(counties = n_distinct(area_fips),
+            avg_employment = mean(avg_emplvl),
+            avg_weekly_wage = mean(avg_wkly_wage),
+            avg_employment_growth = mean(emplvl_growth_yr, na.rm = TRUE),
+            avg_wage_growth = mean(wage_growth_yr, na.rm = TRUE)) |> 
+  kable()
+
+fed_funds_graph
+emplvl_growth
+emplvl_growth_fed_district
+wage_growth_fed_district
+district_summary
+
+ggsave("output/figures/fed_funds.pdf",
+       plot = fed_funds_graph,
+       width = 12,
+       height = 8)
+
+ggsave("output/figures/employment_growth_national.pdf",
+       plot = emplvl_growth,
+       height = 12,
+       width = 8)
+
+ggsave("output/figures/employment_growth_fed_district.pdf",
+       plot = emplvl_growth_fed_district,
+       width = 12,
+       height = 8)
+
+ggsave("output/figures/wage_growth_fed_district.pdf",
+       plot = wage_growth_fed_district,
+       width = 12,
+       heigh = 8)
+
+```
+
+```{r}
+data <- read.csv("data/processed/analysis_panel.csv")
+emplvl_lm <- plm(data = data, emplvl_growth_yr ~ fed_district:fed_funds_chg_qtr + 
+                   fed_district:fed_funds_chg_lag1 + 
+                   fed_district:fed_funds_chg_lag2 +
+                   fed_district:fed_funds_chg_lag3 +
+                   fed_district:fed_funds_chg_lag4,
+                 index = c("area_fips", "date"), model  ="within", effect = "twoways")
+
+summary(emplvl_lm)
+
+emplvl_lm_simple <- plm(
+  emplvl_growth_yr ~
+    fed_district:fed_funds_chg_qtr,
+  data = data,
+  index = c("area_fips", "date"),
+  model = "within",
+  effect = "twoways"
+)
+
+summary(emplvl_lm_simple)
 ```
