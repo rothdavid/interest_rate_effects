@@ -9,7 +9,7 @@ library(tidyverse)
 library(readxl)
 library(lubridate)
 library(knitr)
-library(plm)
+library(fixest)
 ```
 
 ```{r}
@@ -539,23 +539,37 @@ ggsave("output/figures/wage_growth_fed_district.pdf",
 
 ```{r}
 data <- read.csv("data/processed/analysis_panel.csv")
-emplvl_lm <- plm(data = data, emplvl_growth_yr ~ fed_district:fed_funds_chg_qtr + 
-                   fed_district:fed_funds_chg_lag1 + 
-                   fed_district:fed_funds_chg_lag2 +
-                   fed_district:fed_funds_chg_lag3 +
-                   fed_district:fed_funds_chg_lag4,
-                 index = c("area_fips", "date"), model  ="within", effect = "twoways")
 
-summary(emplvl_lm)
+data <- data |> 
+  mutate(date = ymd(as_datetime(date)))
 
-emplvl_lm_simple <- plm(
-  emplvl_growth_yr ~
-    fed_district:fed_funds_chg_qtr,
-  data = data,
-  index = c("area_fips", "date"),
-  model = "within",
-  effect = "twoways"
-)
+emplvl_lm <- feols(emplvl_growth_yr ~ i(fed_district, fed_funds_chg_qtr) | 
+                     area_fips + date, data = data)
 
-summary(emplvl_lm_simple)
-```
+emplvl_lm1 <- feols(emplvl_growth_yr ~ i(fed_district, fed_funds_chg_lag1, ref = "St. Louis") + 
+                      i(fed_district, fed_funds_chg_qtr, ref = "St. Louis") | 
+                      area_fips + date, data = data)
+  
+
+emplvl_lm2 <- feols(emplvl_growth_yr ~ i(fed_district, fed_funds_chg_qtr, ref = "St. Louis")
+                    + i(fed_district, fed_funds_chg_lag1, ref = "St. Louis") 
+                    + i(fed_district, fed_funds_chg_lag2, ref = "St. Louis") |
+                      area_fips + date, data = data)
+
+emplvl_lm3 <- feols(emplvl_growth_yr ~ i(fed_district, fed_funds_chg_qtr, ref = "St. Louis")
+                    + i(fed_district, fed_funds_chg_lag1, ref = "St. Louis") 
+                    + i(fed_district, fed_funds_chg_lag2, ref = "St. Louis")
+                    + i(fed_district, fed_funds_chg_lag3, ref = "St. Louis") |
+                      area_fips + date, data = data)
+  
+emplvl_lm4 <- feols(emplvl_growth_yr ~ i(fed_district, fed_funds_chg_qtr, ref = "St. Louis") 
+                    + i(fed_district, fed_funds_chg_lag1, ref = "St. Louis")
+                    + i(fed_district, fed_funds_chg_lag2, ref = "St. Louis")
+                    + i(fed_district, fed_funds_chg_lag3, ref = "St. Louis")
+                    + i(fed_district, fed_funds_chg_lag4, ref = "St. Louis") |
+                      area_fips + date, data = data)
+
+
+etable(emplvl_lm, emplvl_lm1, emplvl_lm2, emplvl_lm3, emplvl_lm4, vcov = ~ fed_district + date) |> 
+  kable()
+``` 
